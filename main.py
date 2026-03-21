@@ -6,6 +6,7 @@ from api.categories import router as categories_router
 from api.daily_pages import router as daily_pages_router
 from api.tasks import router as tasks_router
 from api.time_blocks import router as time_blocks_router
+from api.analytics import router as analytics_router
 
 
 @asynccontextmanager
@@ -22,6 +23,7 @@ app.include_router(categories_router)
 app.include_router(daily_pages_router)
 app.include_router(tasks_router)
 app.include_router(time_blocks_router)
+app.include_router(analytics_router)
 
 
 @app.get("/health")
