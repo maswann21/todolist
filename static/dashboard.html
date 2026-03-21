@@ -2,13 +2,41 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
-  <title>Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard - Daily Time Tracker</title>
   <link rel="stylesheet" href="/static/css/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
 <body>
-  <div style="padding:32px;text-align:center;">
-    <p>Dashboard coming soon...</p>
-    <a href="/">← Back to Calendar</a>
+  <div class="dashboard-container">
+    <div class="dashboard-header">
+      <h1>📊 Dashboard</h1>
+      <div style="display:flex;align-items:center;gap:12px;">
+        <select id="rangeSelect" class="btn">
+          <option value="week">이번 주</option>
+          <option value="month">이번 달</option>
+        </select>
+        <a href="/" class="back-link">← 캘린더</a>
+      </div>
+    </div>
+
+    <div class="charts-row">
+      <div class="chart-card">
+        <h3>카테고리별 시간 비중</h3>
+        <canvas id="categoryChart" height="200"></canvas>
+      </div>
+      <div class="chart-card">
+        <h3>할 일 완료율</h3>
+        <canvas id="completionChart" height="200"></canvas>
+      </div>
+    </div>
+
+    <div class="chart-full">
+      <h3>일별 작업 시간 추이</h3>
+      <canvas id="trendChart" height="120"></canvas>
+    </div>
   </div>
+
+  <script src="/static/js/dashboard.js"></script>
 </body>
 </html>
