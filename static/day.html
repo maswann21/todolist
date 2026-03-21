@@ -2,13 +2,65 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Daily Time Tracker - Day</title>
   <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
-  <div style="padding:32px;text-align:center;">
-    <p>Day page coming soon...</p>
-    <a href="/">← Back to Calendar</a>
+  <div class="day-container">
+    <!-- Header: date nav + d-day -->
+    <div class="day-header">
+      <div class="day-nav">
+        <button class="btn" id="prevDayBtn">◀</button>
+        <h2 id="dayTitle"></h2>
+        <button class="btn" id="nextDayBtn">▶</button>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;">
+        <label style="font-size:0.85rem;color:#64748b;">D-DAY</label>
+        <input id="ddayInput" type="text" placeholder="D-30" style="width:80px;padding:4px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:0.85rem;">
+        <a href="/" class="back-link">← 캘린더</a>
+      </div>
+    </div>
+
+    <!-- Comment -->
+    <div class="day-comment">
+      <input id="commentInput" type="text" placeholder="오늘의 코멘트를 입력하세요...">
+    </div>
+
+    <!-- Total time -->
+    <div class="day-total">
+      총 작업 시간: <span id="totalTime">00:00</span>
+    </div>
+
+    <!-- Main: checklist + timetable -->
+    <div class="day-main">
+      <!-- Checklist -->
+      <div class="checklist">
+        <h3>CHECK LIST</h3>
+        <div id="taskList"></div>
+        <div class="add-task-form" style="margin-top:12px;">
+          <input id="newTaskTitle" type="text" placeholder="새 할 일...">
+          <select id="newTaskCategory"></select>
+          <button class="btn btn-primary" id="addTaskBtn">+</button>
+        </div>
+      </div>
+
+      <!-- Timetable (placeholder — Task 10 will fill this) -->
+      <div class="timetable-wrapper" id="timetableWrapper">
+        <h3>TIMETABLE</h3>
+        <div id="timetableArea" style="color:#94a3b8;font-size:0.85rem;padding:16px 0;">
+          할 일을 선택한 뒤 시간 블록을 드래그하세요. (Task 10에서 구현됩니다)
+        </div>
+      </div>
+    </div>
+
+    <!-- Memo -->
+    <div class="day-memo">
+      <h3>MEMO</h3>
+      <textarea id="memoInput" placeholder="메모를 입력하세요..."></textarea>
+    </div>
   </div>
+
+  <script src="/static/js/day.js"></script>
 </body>
 </html>
