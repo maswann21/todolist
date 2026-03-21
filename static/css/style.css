@@ -275,7 +275,8 @@ body {
 }
 
 .timetable-hour-cells {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
   flex: 1;
   border-left: 1px solid #e2e8f0;
 }

@@ -276,9 +276,6 @@ function buildTimetable() {
     // 6 cells for this hour (10 min each)
     const cellsWrapper = document.createElement('div');
     cellsWrapper.className = 'timetable-hour-cells';
-    cellsWrapper.style.display = 'grid';
-    cellsWrapper.style.gridTemplateColumns = 'repeat(6, 1fr)';
-    cellsWrapper.style.flex = '1';
 
     for (let min = 0; min < 6; min++) {
       const slotIndex = hour * 6 + min;
