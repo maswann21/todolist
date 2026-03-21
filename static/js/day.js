@@ -229,6 +229,226 @@ async function init() {
   document.getElementById('newTaskTitle').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') addTask();
   });
+
+  buildTimetable();
+  fillTimetableFromTasks();
 }
 
 init();
+
+// ===== TIMETABLE =====
+
+const TOTAL_SLOTS = 144; // 24 hours × 6 slots (10 min each)
+let timetableSlots = []; // array of DOM elements, index = slot index (0 = 00:00, 143 = 23:50)
+let isDragging = false;
+let dragStartSlot = null;
+let dragEndSlot = null;
+let activeTimetableTaskId = null;
+
+function slotToTime(slotIndex) {
+  const totalMinutes = slotIndex * 10;
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+function timeToSlot(timeStr) {
+  const [h, m] = timeStr.split(':').map(Number);
+  return Math.floor((h * 60 + m) / 10);
+}
+
+function buildTimetable() {
+  const grid = document.getElementById('timetableGrid');
+  if (!grid) return;
+  grid.innerHTML = '';
+  timetableSlots = [];
+
+  for (let hour = 0; hour < 24; hour++) {
+    const row = document.createElement('div');
+    row.className = 'timetable-hour-row';
+
+    // Hour label
+    const label = document.createElement('div');
+    label.className = 'timetable-hour-label';
+    label.textContent = `${hour}:00`;
+    row.appendChild(label);
+
+    // 6 cells for this hour (10 min each)
+    const cellsWrapper = document.createElement('div');
+    cellsWrapper.className = 'timetable-hour-cells';
+    cellsWrapper.style.display = 'grid';
+    cellsWrapper.style.gridTemplateColumns = 'repeat(6, 1fr)';
+    cellsWrapper.style.flex = '1';
+
+    for (let min = 0; min < 6; min++) {
+      const slotIndex = hour * 6 + min;
+      const cell = document.createElement('div');
+      cell.className = 'timetable-slot';
+      cell.dataset.slot = slotIndex;
+
+      cell.addEventListener('mousedown', onSlotMousedown);
+      cell.addEventListener('mouseover', onSlotMouseover);
+      cell.addEventListener('mouseup', onSlotMouseup);
+      cell.addEventListener('click', onSlotClick);
+
+      timetableSlots.push(cell);
+      cellsWrapper.appendChild(cell);
+    }
+
+    row.appendChild(cellsWrapper);
+    grid.appendChild(row);
+  }
+
+  // Prevent text selection during drag
+  grid.addEventListener('selectstart', e => e.preventDefault());
+  document.addEventListener('mouseup', onDocumentMouseup);
+}
+
+function fillTimetableFromTasks() {
+  // Clear all fills
+  for (const slot of timetableSlots) {
+    slot.style.background = '';
+    slot.classList.remove('filled');
+    delete slot.dataset.blockId;
+    delete slot.dataset.taskId;
+  }
+
+  if (!pageData) return;
+
+  for (const task of pageData.tasks) {
+    const cat = getCategoryById(task.category_id);
+    for (const block of task.time_blocks) {
+      const startSlot = timeToSlot(block.start_at);
+      const endSlot = timeToSlot(block.end_at);
+      for (let i = startSlot; i < endSlot; i++) {
+        if (timetableSlots[i]) {
+          timetableSlots[i].style.background = cat.color;
+          timetableSlots[i].classList.add('filled');
+          timetableSlots[i].dataset.blockId = block.id;
+          timetableSlots[i].dataset.taskId = task.id;
+        }
+      }
+    }
+  }
+}
+
+function paintRange(startSlot, endSlot, color) {
+  const lo = Math.min(startSlot, endSlot);
+  const hi = Math.max(startSlot, endSlot);
+  for (let i = lo; i <= hi; i++) {
+    if (timetableSlots[i] && !timetableSlots[i].classList.contains('filled')) {
+      timetableSlots[i].style.background = color;
+      timetableSlots[i].classList.add('dragging');
+    }
+  }
+}
+
+function clearDragPaint(startSlot, endSlot) {
+  const lo = Math.min(startSlot, endSlot);
+  const hi = Math.max(startSlot, endSlot);
+  for (let i = lo; i <= hi; i++) {
+    if (timetableSlots[i] && timetableSlots[i].classList.contains('dragging')) {
+      timetableSlots[i].style.background = '';
+      timetableSlots[i].classList.remove('dragging');
+    }
+  }
+}
+
+function onSlotMousedown(e) {
+  if (!activeTimetableTaskId) return;
+  const slot = parseInt(e.currentTarget.dataset.slot);
+  if (timetableSlots[slot].classList.contains('filled')) return; // don't start drag on filled
+  isDragging = true;
+  dragStartSlot = slot;
+  dragEndSlot = slot;
+  const cat = getCategoryById(pageData.tasks.find(t => t.id === activeTimetableTaskId)?.category_id);
+  paintRange(dragStartSlot, dragEndSlot, cat.color + '88');
+  e.preventDefault();
+}
+
+function onSlotMouseover(e) {
+  if (!isDragging) return;
+  const slot = parseInt(e.currentTarget.dataset.slot);
+  clearDragPaint(dragStartSlot, dragEndSlot);
+  dragEndSlot = slot;
+  const cat = getCategoryById(pageData.tasks.find(t => t.id === activeTimetableTaskId)?.category_id);
+  paintRange(dragStartSlot, dragEndSlot, cat.color + '88');
+}
+
+async function onSlotMouseup(e) {
+  if (!isDragging) return;
+  const slot = parseInt(e.currentTarget.dataset.slot);
+  dragEndSlot = slot;
+  isDragging = false;
+
+  clearDragPaint(dragStartSlot, dragEndSlot);
+
+  const lo = Math.min(dragStartSlot, dragEndSlot);
+  const hi = Math.max(dragStartSlot, dragEndSlot) + 1; // end is exclusive
+
+  const startTime = slotToTime(lo);
+  const endTime = slotToTime(hi);
+
+  try {
+    const block = await api('POST', `/api/tasks/${activeTimetableTaskId}/time-blocks`, {
+      start_at: startTime,
+      end_at: endTime,
+    });
+    // Add block to pageData
+    const task = pageData.tasks.find(t => t.id === activeTimetableTaskId);
+    if (task) task.time_blocks.push(block);
+    fillTimetableFromTasks();
+    updateTotalTime();
+  } catch (err) {
+    if (err.message.includes('409') || err.message.toLowerCase().includes('overlap')) {
+      alert('이 시간대에 이미 다른 블록이 있습니다.');
+    } else {
+      alert('블록 추가 실패: ' + err.message);
+    }
+    fillTimetableFromTasks(); // restore
+  }
+}
+
+function onDocumentMouseup() {
+  if (isDragging) {
+    isDragging = false;
+    if (dragStartSlot !== null && dragEndSlot !== null) {
+      clearDragPaint(dragStartSlot, dragEndSlot);
+    }
+  }
+}
+
+async function onSlotClick(e) {
+  const slot = e.currentTarget;
+  if (!slot.classList.contains('filled')) return;
+  const blockId = parseInt(slot.dataset.blockId);
+  if (!blockId) return;
+  if (!confirm('이 시간 블록을 삭제할까요?')) return;
+  try {
+    await api('DELETE', `/api/time-blocks/${blockId}`);
+    // Remove block from pageData
+    for (const task of pageData.tasks) {
+      task.time_blocks = task.time_blocks.filter(b => b.id !== blockId);
+    }
+    fillTimetableFromTasks();
+    updateTotalTime();
+  } catch (err) {
+    alert('삭제 실패: ' + err.message);
+  }
+}
+
+// Listen for task selection from checklist
+document.addEventListener('taskSelected', (e) => {
+  activeTimetableTaskId = e.detail.taskId;
+  const task = pageData?.tasks.find(t => t.id === activeTimetableTaskId);
+  const label = document.getElementById('selectedTaskLabel');
+  if (label) {
+    label.textContent = task ? `— ${task.title} 선택됨` : '';
+  }
+});
+
+// Listen for tasks changes (delete) to update timetable
+document.addEventListener('tasksChanged', () => {
+  fillTimetableFromTasks();
+  updateTotalTime();
+});
