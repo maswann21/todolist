@@ -28,6 +28,9 @@ Copy `.env` and fill in the real Neon PostgreSQL URL:
 DATABASE_URL=postgresql+asyncpg://user:pass@host/dbname
 ```
 
+Neon gives: `postgresql://...?sslmode=require&channel_binding=require`
+asyncpg needs: `postgresql+asyncpg://...?ssl=require` (add `+asyncpg`, change `sslmode`→`ssl`, drop `channel_binding`)
+
 The app auto-creates tables and seeds 6 categories on startup via the `lifespan` handler in `main.py`.
 
 ## Architecture
@@ -79,3 +82,7 @@ Task status cycle: `null → done(✔) → failed(✖) → carry(▲) → null`.
 - `tests/conftest.py` has two fixtures: `db` (for model tests, rolls back per test) and `client` (for API tests, drops+recreates the SQLite DB each time to avoid state leakage)
 - `test_models.py` uses unique names like `"공부_model_test"` to avoid conflicts with seeded category names
 - All API test fixtures use `client` from conftest — no per-file client setup needed
+
+### Timetable CSS
+
+`.timetable-slot` needs both `border-bottom` (row separation) and `border-right` (column separation). Missing `border-right` makes columns invisible. Closest Neon AWS region for Korea: **ap-southeast-1 (Singapore)** — Tokyo not available on free tier.
