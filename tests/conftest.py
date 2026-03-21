@@ -33,12 +33,16 @@ async def db(test_engine):
 
 
 @pytest.fixture
-async def client(test_engine):
+async def client():
     from db.database import get_db
     from db.seed import seed_categories
     from main import app
 
-    session_factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    engine = create_async_engine(TEST_DB_URL, echo=False)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
     async def override_get_db():
         async with session_factory() as session:
@@ -55,3 +59,4 @@ async def client(test_engine):
         yield c
 
     app.dependency_overrides.clear()
+    await engine.dispose()
