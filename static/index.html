@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Daily Time Tracker</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <div class="calendar-container">
+    <div class="calendar-header">
+      <button class="btn" id="prevBtn">◀</button>
+      <h2 id="monthTitle"></h2>
+      <div style="display:flex;gap:8px;">
+        <button class="btn" id="nextBtn">▶</button>
+        <a href="/dashboard"><button class="btn btn-primary">Dashboard</button></a>
+      </div>
+    </div>
+    <div class="calendar-grid" id="calendarGrid"></div>
+  </div>
+  <script src="/static/js/calendar.js"></script>
+</body>
+</html>
