@@ -82,16 +82,22 @@ async function handleTaskListClick(e) {
   if (e.target.classList.contains('task-delete')) {
     e.stopPropagation();
     if (!confirm(`"${task.title}" 삭제할까요?`)) return;
-    try {
-      await api('DELETE', `/api/tasks/${task.id}`);
-      pageData.tasks = pageData.tasks.filter(t => t.id !== task.id);
-      if (selectedTaskId === task.id) selectedTaskId = null;
-      taskItem.remove();
+    // Optimistic: remove from DOM and state immediately
+    const taskIndex = pageData.tasks.indexOf(task);
+    pageData.tasks = pageData.tasks.filter(t => t.id !== task.id);
+    if (selectedTaskId === task.id) selectedTaskId = null;
+    taskItem.remove();
+    updateTotalTime();
+    document.dispatchEvent(new CustomEvent('tasksChanged', { detail: { tasks: pageData.tasks } }));
+    // API in background
+    api('DELETE', `/api/tasks/${task.id}`).catch(err => {
+      // Rollback: re-insert task and re-render
+      pageData.tasks.splice(taskIndex, 0, task);
+      renderTasks();
+      fillTimetableFromTasks();
       updateTotalTime();
-      document.dispatchEvent(new CustomEvent('tasksChanged', { detail: { tasks: pageData.tasks } }));
-    } catch (err) {
       alert('삭제 실패: ' + err.message);
-    }
+    });
     return;
   }
 
@@ -99,17 +105,24 @@ async function handleTaskListClick(e) {
     e.stopPropagation();
     const currentIdx = STATUS_CYCLE.indexOf(task.status);
     const nextStatus = STATUS_CYCLE[(currentIdx + 1) % STATUS_CYCLE.length];
-    try {
-      const updated = await api('PUT', `/api/tasks/${task.id}`, { status: nextStatus || '' });
-      task.status = updated.status;
-      const statusEl = taskItem.querySelector('.task-status');
-      statusEl.textContent = STATUS_ICONS[task.status] || '—';
-      statusEl.className = `task-status task-status-badge status-badge-${task.status || 'none'}`;
-      const statusClass = task.status ? `status-${task.status}` : '';
-      taskItem.className = 'task-item' + (task.id === selectedTaskId ? ' selected' : '') + (statusClass ? ` ${statusClass}` : '');
-    } catch (err) {
-      alert('상태 변경 실패: ' + err.message);
-    }
+    const prevStatus = task.status;
+    // Optimistic: update DOM immediately
+    task.status = nextStatus;
+    const statusEl = taskItem.querySelector('.task-status');
+    statusEl.textContent = STATUS_ICONS[task.status] || '—';
+    statusEl.className = `task-status task-status-badge status-badge-${task.status || 'none'}`;
+    const statusClass = task.status ? `status-${task.status}` : '';
+    taskItem.className = 'task-item' + (task.id === selectedTaskId ? ' selected' : '') + (statusClass ? ` ${statusClass}` : '');
+    // API in background
+    api('PUT', `/api/tasks/${task.id}`, { status: nextStatus || '' }).catch(err => {
+      // Rollback on failure
+      task.status = prevStatus;
+      statusEl.textContent = STATUS_ICONS[prevStatus] || '—';
+      statusEl.className = `task-status task-status-badge status-badge-${prevStatus || 'none'}`;
+      const rollbackClass = prevStatus ? `status-${prevStatus}` : '';
+      taskItem.className = 'task-item' + (task.id === selectedTaskId ? ' selected' : '') + (rollbackClass ? ` ${rollbackClass}` : '');
+      console.error('상태 변경 실패:', err);
+    });
     return;
   }
 
@@ -157,30 +170,37 @@ async function addTask() {
   const categoryId = parseInt(catSelect.value);
   const priority = (pageData?.tasks?.length || 0) + 1;
 
-  try {
-    const newTask = await api('POST', `/api/daily-pages/${currentDate}/tasks`, {
-      title,
-      category_id: categoryId,
-      priority,
-    });
-    newTask.time_blocks = [];
-    pageData.tasks.push(newTask);
-    titleInput.value = '';
-    const cat = getCategoryById(newTask.category_id);
-    const item = document.createElement('div');
-    item.className = 'task-item';
+  // Optimistic: add to DOM immediately with temp ID
+  const tempId = -Date.now();
+  const tempTask = { id: tempId, title, category_id: categoryId, priority, status: null, time_blocks: [] };
+  pageData.tasks.push(tempTask);
+  titleInput.value = '';
+  const cat = getCategoryById(categoryId);
+  const item = document.createElement('div');
+  item.className = 'task-item';
+  item.dataset.taskId = tempId;
+  item.innerHTML = `
+    <div class="task-color-dot" style="background:${cat.color}"></div>
+    <span class="task-title">${escapeHtml(title)}</span>
+    <span class="task-status task-status-badge status-badge-none" title="클릭하여 상태 변경">—</span>
+    <span class="task-delete" title="삭제">✕</span>
+  `;
+  document.getElementById('taskList').appendChild(item);
+  document.dispatchEvent(new CustomEvent('tasksChanged', { detail: { tasks: pageData.tasks } }));
+  // API in background — replace temp ID with real one
+  api('POST', `/api/daily-pages/${currentDate}/tasks`, {
+    title,
+    category_id: categoryId,
+    priority,
+  }).then(newTask => {
+    tempTask.id = newTask.id;
     item.dataset.taskId = newTask.id;
-    item.innerHTML = `
-      <div class="task-color-dot" style="background:${cat.color}"></div>
-      <span class="task-title">${escapeHtml(newTask.title)}</span>
-      <span class="task-status task-status-badge status-badge-none" title="클릭하여 상태 변경">—</span>
-      <span class="task-delete" title="삭제">✕</span>
-    `;
-    document.getElementById('taskList').appendChild(item);
-    document.dispatchEvent(new CustomEvent('tasksChanged', { detail: { tasks: pageData.tasks } }));
-  } catch (err) {
+  }).catch(err => {
+    // Rollback
+    pageData.tasks = pageData.tasks.filter(t => t.id !== tempId);
+    item.remove();
     alert('추가 실패: ' + err.message);
-  }
+  });
 }
 
 // ===== AUTO-SAVE FIELDS =====
@@ -277,6 +297,7 @@ let dragStartSlot = null;
 let dragEndSlot = null;
 let activeTimetableTaskId = null;
 let dragRAFId = null;
+let justFinishedDrag = false;
 
 function slotToTime(slotIndex) {
   const totalMinutes = slotIndex * 10;
@@ -419,6 +440,8 @@ function onSlotMouseover(e) {
 
 async function onSlotMouseup(e) {
   if (!isDragging) return;
+  justFinishedDrag = true;
+  setTimeout(() => { justFinishedDrag = false; }, 0);
   const slot = parseInt(e.currentTarget.dataset.slot);
   dragEndSlot = slot;
   isDragging = false;
@@ -431,24 +454,32 @@ async function onSlotMouseup(e) {
   const startTime = slotToTime(lo);
   const endTime = slotToTime(hi);
 
-  try {
-    const block = await api('POST', `/api/tasks/${activeTimetableTaskId}/time-blocks`, {
-      start_at: startTime,
-      end_at: endTime,
-    });
-    // Add block to pageData
-    const task = pageData.tasks.find(t => t.id === activeTimetableTaskId);
-    if (task) task.time_blocks.push(block);
+  // Optimistic: paint slots and add temp block immediately
+  const task = pageData.tasks.find(t => t.id === activeTimetableTaskId);
+  const tempBlockId = -Date.now();
+  const tempBlock = { id: tempBlockId, task_id: activeTimetableTaskId, start_at: startTime + ':00', end_at: endTime + ':00' };
+  if (task) task.time_blocks.push(tempBlock);
+  fillTimetableFromTasks();
+  updateTotalTime();
+  // API in background
+  api('POST', `/api/tasks/${activeTimetableTaskId}/time-blocks`, {
+    start_at: startTime,
+    end_at: endTime,
+  }).then(block => {
+    // Replace temp with real ID
+    tempBlock.id = block.id;
+    fillTimetableFromTasks();
+  }).catch(err => {
+    // Rollback
+    if (task) task.time_blocks = task.time_blocks.filter(b => b.id !== tempBlockId);
     fillTimetableFromTasks();
     updateTotalTime();
-  } catch (err) {
     if (err.message.includes('409') || err.message.toLowerCase().includes('overlap')) {
       alert('이 시간대에 이미 다른 블록이 있습니다.');
     } else {
       alert('블록 추가 실패: ' + err.message);
     }
-    fillTimetableFromTasks(); // restore
-  }
+  });
 }
 
 function onDocumentMouseup() {
@@ -462,22 +493,36 @@ function onDocumentMouseup() {
 }
 
 async function onSlotClick(e) {
+  if (justFinishedDrag) return;
   const slot = e.currentTarget;
   if (!slot.classList.contains('filled')) return;
   const blockId = parseInt(slot.dataset.blockId);
   if (!blockId) return;
   if (!confirm('이 시간 블록을 삭제할까요?')) return;
-  try {
-    await api('DELETE', `/api/time-blocks/${blockId}`);
-    // Remove block from pageData
-    for (const task of pageData.tasks) {
-      task.time_blocks = task.time_blocks.filter(b => b.id !== blockId);
+  // Optimistic: remove from state and DOM immediately
+  let removedBlock = null;
+  let removedFromTask = null;
+  for (const task of pageData.tasks) {
+    const idx = task.time_blocks.findIndex(b => b.id === blockId);
+    if (idx !== -1) {
+      removedBlock = task.time_blocks[idx];
+      removedFromTask = task;
+      task.time_blocks.splice(idx, 1);
+      break;
     }
-    fillTimetableFromTasks();
-    updateTotalTime();
-  } catch (err) {
-    alert('삭제 실패: ' + err.message);
   }
+  fillTimetableFromTasks();
+  updateTotalTime();
+  // API in background
+  api('DELETE', `/api/time-blocks/${blockId}`).catch(err => {
+    // Rollback
+    if (removedBlock && removedFromTask) {
+      removedFromTask.time_blocks.push(removedBlock);
+      fillTimetableFromTasks();
+      updateTotalTime();
+    }
+    alert('삭제 실패: ' + err.message);
+  });
 }
 
 // Listen for task selection from checklist
