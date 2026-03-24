@@ -202,6 +202,35 @@ body {
   cursor: pointer;
 }
 
+/* Status badge */
+.task-status-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  transition: background 0.15s, color 0.15s;
+}
+.status-badge-none  { background: #f1f5f9; color: #94a3b8; }
+.status-badge-done  { background: #dcfce7; color: #16a34a; }
+.status-badge-failed{ background: #fee2e2; color: #dc2626; }
+.status-badge-carry { background: #fef9c3; color: #ca8a04; }
+
+/* Task item state when status set */
+.task-item.status-done .task-title {
+  text-decoration: line-through;
+  color: #94a3b8;
+}
+.task-item.status-failed .task-title {
+  color: #ef4444;
+}
+.task-item.status-carry .task-title {
+  color: #d97706;
+}
+
 .task-delete {
   font-size: 0.7rem;
   color: #cbd5e1;
@@ -270,8 +299,9 @@ body {
   color: #94a3b8;
   text-align: right;
   padding-right: 6px;
+  padding-top: 2px;
   flex-shrink: 0;
-  line-height: 108px;  /* 6 cells × 18px = 108px per hour */
+  align-self: flex-start;
 }
 
 .timetable-hour-cells {
@@ -283,7 +313,7 @@ body {
 
 .timetable-slot {
   width: 100%;
-  height: 18px;
+  height: 32px;
   border-right: 1px solid #dde3ea;
   border-bottom: 1px solid #dde3ea;
   background: #fafbfc;
@@ -311,7 +341,40 @@ body {
 }
 
 .timetable-slot.dragging {
-  opacity: 0.5;
+  opacity: 0.6;
+}
+
+/* No task selected state */
+.timetable.timetable-no-task {
+  position: relative;
+}
+.timetable.timetable-no-task::after {
+  content: '← 왼쪽에서 할 일을 먼저 선택하세요';
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(248, 250, 252, 0.75);
+  color: #94a3b8;
+  font-size: 0.8rem;
+  font-weight: 500;
+  pointer-events: none;
+  border-radius: 6px;
+}
+.timetable.timetable-no-task .timetable-slot {
+  cursor: default;
+}
+
+/* Shake animation for no-task click */
+@keyframes timetable-shake {
+  0%, 100% { transform: translateX(0); }
+  20%       { transform: translateX(-4px); }
+  60%       { transform: translateX(4px); }
+  80%       { transform: translateX(-2px); }
+}
+.timetable-shake {
+  animation: timetable-shake 0.35s ease;
 }
 
 /* Day memo */
