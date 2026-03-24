@@ -2,6 +2,7 @@
 let currentDate = '';
 let pageData = null;
 let categories = [];
+let categoryMap = new Map();
 let selectedTaskId = null;
 
 const STATUS_CYCLE = [null, 'done', 'failed', 'carry'];
@@ -10,7 +11,9 @@ const STATUS_ICONS = { done: '✔', failed: '✖', carry: '▲', null: '—' };
 // ===== DATE HELPERS =====
 function getDateFromUrl() {
   const params = new URLSearchParams(window.location.search);
-  return params.get('date') || new Date().toISOString().slice(0, 10);
+  if (params.get('date')) return params.get('date');
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 function navigateToDate(dateStr) {
@@ -20,7 +23,7 @@ function navigateToDate(dateStr) {
 function offsetDate(dateStr, days) {
   const d = new Date(dateStr + 'T00:00:00');
   d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 function formatDateTitle(dateStr) {
@@ -65,7 +68,57 @@ function updateTotalTime() {
 
 // ===== CATEGORY HELPERS =====
 function getCategoryById(id) {
-  return categories.find(c => c.id === id) || { color: '#94a3b8', name: '?' };
+  return categoryMap.get(id) || { color: '#94a3b8', name: '?' };
+}
+
+// ===== TASK LIST EVENT DELEGATION =====
+async function handleTaskListClick(e) {
+  const taskItem = e.target.closest('.task-item');
+  if (!taskItem) return;
+  const taskId = parseInt(taskItem.dataset.taskId);
+  const task = pageData.tasks.find(t => t.id === taskId);
+  if (!task) return;
+
+  if (e.target.classList.contains('task-delete')) {
+    e.stopPropagation();
+    if (!confirm(`"${task.title}" 삭제할까요?`)) return;
+    try {
+      await api('DELETE', `/api/tasks/${task.id}`);
+      pageData.tasks = pageData.tasks.filter(t => t.id !== task.id);
+      if (selectedTaskId === task.id) selectedTaskId = null;
+      taskItem.remove();
+      updateTotalTime();
+      document.dispatchEvent(new CustomEvent('tasksChanged', { detail: { tasks: pageData.tasks } }));
+    } catch (err) {
+      alert('삭제 실패: ' + err.message);
+    }
+    return;
+  }
+
+  if (e.target.classList.contains('task-status') || e.target.classList.contains('task-status-badge')) {
+    e.stopPropagation();
+    const currentIdx = STATUS_CYCLE.indexOf(task.status);
+    const nextStatus = STATUS_CYCLE[(currentIdx + 1) % STATUS_CYCLE.length];
+    try {
+      const updated = await api('PUT', `/api/tasks/${task.id}`, { status: nextStatus || '' });
+      task.status = updated.status;
+      const statusEl = taskItem.querySelector('.task-status');
+      statusEl.textContent = STATUS_ICONS[task.status] || '—';
+      statusEl.className = `task-status task-status-badge status-badge-${task.status || 'none'}`;
+      const statusClass = task.status ? `status-${task.status}` : '';
+      taskItem.className = 'task-item' + (task.id === selectedTaskId ? ' selected' : '') + (statusClass ? ` ${statusClass}` : '');
+    } catch (err) {
+      alert('상태 변경 실패: ' + err.message);
+    }
+    return;
+  }
+
+  selectedTaskId = task.id === selectedTaskId ? null : task.id;
+  document.querySelectorAll('.task-item').forEach(item => {
+    const id = parseInt(item.dataset.taskId);
+    item.classList.toggle('selected', id === selectedTaskId);
+  });
+  document.dispatchEvent(new CustomEvent('taskSelected', { detail: { taskId: selectedTaskId } }));
 }
 
 // ===== TASK RENDERING =====
@@ -79,54 +132,16 @@ function renderTasks() {
   for (const task of tasks) {
     const cat = getCategoryById(task.category_id);
     const item = document.createElement('div');
-    item.className = 'task-item' + (task.id === selectedTaskId ? ' selected' : '');
+    const statusClass = task.status ? ` status-${task.status}` : '';
+    item.className = 'task-item' + (task.id === selectedTaskId ? ' selected' : '') + statusClass;
     item.dataset.taskId = task.id;
 
     item.innerHTML = `
       <div class="task-color-dot" style="background:${cat.color}"></div>
       <span class="task-title">${escapeHtml(task.title)}</span>
-      <span class="task-status" title="클릭하여 상태 변경">${STATUS_ICONS[task.status] || '—'}</span>
+      <span class="task-status task-status-badge status-badge-${task.status || 'none'}" title="클릭하여 상태 변경">${STATUS_ICONS[task.status] || '—'}</span>
       <span class="task-delete" title="삭제">✕</span>
     `;
-
-    // Select task on click (for timetable painting)
-    item.addEventListener('click', (e) => {
-      if (e.target.classList.contains('task-status') || e.target.classList.contains('task-delete')) return;
-      selectedTaskId = task.id === selectedTaskId ? null : task.id;
-      renderTasks();
-      // Notify timetable (Task 10 will hook into this)
-      document.dispatchEvent(new CustomEvent('taskSelected', { detail: { taskId: selectedTaskId } }));
-    });
-
-    // Status cycle
-    item.querySelector('.task-status').addEventListener('click', async (e) => {
-      e.stopPropagation();
-      const currentIdx = STATUS_CYCLE.indexOf(task.status);
-      const nextStatus = STATUS_CYCLE[(currentIdx + 1) % STATUS_CYCLE.length];
-      try {
-        const updated = await api('PUT', `/api/tasks/${task.id}`, { status: nextStatus || '' });
-        task.status = updated.status;
-        renderTasks();
-      } catch (err) {
-        alert('상태 변경 실패: ' + err.message);
-      }
-    });
-
-    // Delete
-    item.querySelector('.task-delete').addEventListener('click', async (e) => {
-      e.stopPropagation();
-      if (!confirm(`"${task.title}" 삭제할까요?`)) return;
-      try {
-        await api('DELETE', `/api/tasks/${task.id}`);
-        pageData.tasks = pageData.tasks.filter(t => t.id !== task.id);
-        if (selectedTaskId === task.id) selectedTaskId = null;
-        renderTasks();
-        updateTotalTime();
-        document.dispatchEvent(new CustomEvent('tasksChanged', { detail: { tasks: pageData.tasks } }));
-      } catch (err) {
-        alert('삭제 실패: ' + err.message);
-      }
-    });
 
     container.appendChild(item);
   }
@@ -151,7 +166,17 @@ async function addTask() {
     newTask.time_blocks = [];
     pageData.tasks.push(newTask);
     titleInput.value = '';
-    renderTasks();
+    const cat = getCategoryById(newTask.category_id);
+    const item = document.createElement('div');
+    item.className = 'task-item';
+    item.dataset.taskId = newTask.id;
+    item.innerHTML = `
+      <div class="task-color-dot" style="background:${cat.color}"></div>
+      <span class="task-title">${escapeHtml(newTask.title)}</span>
+      <span class="task-status task-status-badge status-badge-none" title="클릭하여 상태 변경">—</span>
+      <span class="task-delete" title="삭제">✕</span>
+    `;
+    document.getElementById('taskList').appendChild(item);
     document.dispatchEvent(new CustomEvent('tasksChanged', { detail: { tasks: pageData.tasks } }));
   } catch (err) {
     alert('추가 실패: ' + err.message);
@@ -205,14 +230,20 @@ async function init() {
 
   // Load data
   try {
-    [pageData, categories] = await Promise.all([
+    const cachedCats = localStorage.getItem('categories');
+    const [pageDataResult, categoriesResult] = await Promise.all([
       api('GET', `/api/daily-pages/${currentDate}`),
-      api('GET', '/api/categories'),
+      cachedCats ? Promise.resolve(JSON.parse(cachedCats)) : api('GET', '/api/categories'),
     ]);
+    pageData = pageDataResult;
+    categories = categoriesResult;
+    if (!cachedCats) localStorage.setItem('categories', JSON.stringify(categories));
   } catch (err) {
     alert('데이터 로드 실패: ' + err.message);
     return;
   }
+
+  categoryMap = new Map(categories.map(c => [c.id, c]));
 
   // Fill fields
   document.getElementById('commentInput').value = pageData.comment || '';
@@ -223,6 +254,7 @@ async function init() {
   renderTasks();
   updateTotalTime();
   setupAutoSave();
+  document.getElementById('taskList').addEventListener('click', handleTaskListClick);
 
   // Add task button + enter key
   document.getElementById('addTaskBtn').addEventListener('click', addTask);
@@ -244,6 +276,7 @@ let isDragging = false;
 let dragStartSlot = null;
 let dragEndSlot = null;
 let activeTimetableTaskId = null;
+let dragRAFId = null;
 
 function slotToTime(slotIndex) {
   const totalMinutes = slotIndex * 10;
@@ -299,6 +332,9 @@ function buildTimetable() {
   // Prevent text selection during drag
   grid.addEventListener('selectstart', e => e.preventDefault());
   document.addEventListener('mouseup', onDocumentMouseup);
+
+  // Initial state: no task selected
+  grid.classList.add('timetable-no-task');
 }
 
 function fillTimetableFromTasks() {
@@ -334,7 +370,7 @@ function paintRange(startSlot, endSlot, color) {
   const hi = Math.max(startSlot, endSlot);
   for (let i = lo; i <= hi; i++) {
     if (timetableSlots[i] && !timetableSlots[i].classList.contains('filled')) {
-      timetableSlots[i].style.background = color;
+      timetableSlots[i].style.background = color + '99';
       timetableSlots[i].classList.add('dragging');
     }
   }
@@ -352,7 +388,12 @@ function clearDragPaint(startSlot, endSlot) {
 }
 
 function onSlotMousedown(e) {
-  if (!activeTimetableTaskId) return;
+  if (!activeTimetableTaskId) {
+    const grid = document.getElementById('timetableGrid');
+    grid.classList.add('timetable-shake');
+    setTimeout(() => grid.classList.remove('timetable-shake'), 400);
+    return;
+  }
   const slot = parseInt(e.currentTarget.dataset.slot);
   if (timetableSlots[slot].classList.contains('filled')) return; // don't start drag on filled
   isDragging = true;
@@ -366,10 +407,14 @@ function onSlotMousedown(e) {
 function onSlotMouseover(e) {
   if (!isDragging) return;
   const slot = parseInt(e.currentTarget.dataset.slot);
-  clearDragPaint(dragStartSlot, dragEndSlot);
-  dragEndSlot = slot;
-  const cat = getCategoryById(pageData.tasks.find(t => t.id === activeTimetableTaskId)?.category_id);
-  paintRange(dragStartSlot, dragEndSlot, cat.color + '88');
+  if (dragRAFId) cancelAnimationFrame(dragRAFId);
+  dragRAFId = requestAnimationFrame(() => {
+    clearDragPaint(dragStartSlot, dragEndSlot);
+    dragEndSlot = slot;
+    const cat = getCategoryById(pageData.tasks.find(t => t.id === activeTimetableTaskId)?.category_id);
+    paintRange(dragStartSlot, dragEndSlot, cat.color + '88');
+    dragRAFId = null;
+  });
 }
 
 async function onSlotMouseup(e) {
@@ -409,6 +454,7 @@ async function onSlotMouseup(e) {
 function onDocumentMouseup() {
   if (isDragging) {
     isDragging = false;
+    if (dragRAFId) { cancelAnimationFrame(dragRAFId); dragRAFId = null; }
     if (dragStartSlot !== null && dragEndSlot !== null) {
       clearDragPaint(dragStartSlot, dragEndSlot);
     }
@@ -439,8 +485,18 @@ document.addEventListener('taskSelected', (e) => {
   activeTimetableTaskId = e.detail.taskId;
   const task = pageData?.tasks.find(t => t.id === activeTimetableTaskId);
   const label = document.getElementById('selectedTaskLabel');
+  const grid = document.getElementById('timetableGrid');
   if (label) {
-    label.textContent = task ? `— ${task.title} 선택됨` : '';
+    if (task) {
+      label.textContent = `— ${task.title} 선택됨`;
+      label.style.color = '#3b82f6';
+    } else {
+      label.textContent = '— 할 일을 선택 후 드래그';
+      label.style.color = '#94a3b8';
+    }
+  }
+  if (grid) {
+    grid.classList.toggle('timetable-no-task', !activeTimetableTaskId);
   }
 });
 

@@ -14,9 +14,8 @@ async function fetchAnalytics(range) {
 function renderCategoryChart(ratioData) {
   const ctx = document.getElementById('categoryChart').getContext('2d');
 
-  if (categoryChart) categoryChart.destroy();
-
   if (!ratioData.length) {
+    if (categoryChart) { categoryChart.destroy(); categoryChart = null; }
     ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
     ctx.fillStyle = '#94a3b8';
     ctx.textAlign = 'center';
@@ -25,45 +24,51 @@ function renderCategoryChart(ratioData) {
     return;
   }
 
-  categoryChart = new Chart(ctx, {
-    type: 'doughnut',
-    data: {
-      labels: ratioData.map(d => d.category_name),
-      datasets: [{
-        data: ratioData.map(d => d.total_minutes),
-        backgroundColor: ratioData.map(d => d.category_color),
-        borderWidth: 2,
-        borderColor: '#fff',
-      }],
-    },
-    options: {
-      responsive: true,
-      plugins: {
-        legend: { position: 'right' },
-        tooltip: {
-          callbacks: {
-            label: (ctx) => {
-              const mins = ctx.parsed;
-              const h = Math.floor(mins / 60);
-              const m = mins % 60;
-              return ` ${ctx.label}: ${h}h ${m}m`;
+  const data = {
+    labels: ratioData.map(d => d.category_name),
+    datasets: [{
+      data: ratioData.map(d => d.total_minutes),
+      backgroundColor: ratioData.map(d => d.category_color),
+      borderWidth: 2,
+      borderColor: '#fff',
+    }],
+  };
+
+  if (categoryChart) {
+    categoryChart.data = data;
+    categoryChart.update();
+  } else {
+    categoryChart = new Chart(ctx, {
+      type: 'doughnut',
+      data,
+      options: {
+        responsive: true,
+        plugins: {
+          legend: { position: 'right' },
+          tooltip: {
+            callbacks: {
+              label: (ctx) => {
+                const mins = ctx.parsed;
+                const h = Math.floor(mins / 60);
+                const m = mins % 60;
+                return ` ${ctx.label}: ${h}h ${m}m`;
+              }
             }
           }
         }
       }
-    }
-  });
+    });
+  }
 }
 
 function renderCompletionChart(completionData) {
   const ctx = document.getElementById('completionChart').getContext('2d');
 
-  if (completionChart) completionChart.destroy();
-
   const STATUS_LABELS = { done: '✔ 완료', failed: '✖ 미완료', carry: '▲ 이월', pending: '— 미정' };
   const STATUS_COLORS = { done: '#22c55e', failed: '#ef4444', carry: '#f97316', pending: '#94a3b8' };
 
   if (!completionData.length) {
+    if (completionChart) { completionChart.destroy(); completionChart = null; }
     ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
     ctx.fillStyle = '#94a3b8';
     ctx.textAlign = 'center';
@@ -72,37 +77,43 @@ function renderCompletionChart(completionData) {
     return;
   }
 
-  completionChart = new Chart(ctx, {
-    type: 'doughnut',
-    data: {
-      labels: completionData.map(d => STATUS_LABELS[d.status] || d.status),
-      datasets: [{
-        data: completionData.map(d => d.count),
-        backgroundColor: completionData.map(d => STATUS_COLORS[d.status] || '#94a3b8'),
-        borderWidth: 2,
-        borderColor: '#fff',
-      }],
-    },
-    options: {
-      responsive: true,
-      plugins: {
-        legend: { position: 'right' },
-        tooltip: {
-          callbacks: {
-            label: (ctx) => ` ${ctx.label}: ${ctx.parsed}개 (${completionData[ctx.dataIndex]?.percentage}%)`
+  const data = {
+    labels: completionData.map(d => STATUS_LABELS[d.status] || d.status),
+    datasets: [{
+      data: completionData.map(d => d.count),
+      backgroundColor: completionData.map(d => STATUS_COLORS[d.status] || '#94a3b8'),
+      borderWidth: 2,
+      borderColor: '#fff',
+    }],
+  };
+
+  if (completionChart) {
+    completionChart.data = data;
+    completionChart.update();
+  } else {
+    completionChart = new Chart(ctx, {
+      type: 'doughnut',
+      data,
+      options: {
+        responsive: true,
+        plugins: {
+          legend: { position: 'right' },
+          tooltip: {
+            callbacks: {
+              label: (ctx) => ` ${ctx.label}: ${ctx.parsed}개 (${completionData[ctx.dataIndex]?.percentage}%)`
+            }
           }
         }
       }
-    }
-  });
+    });
+  }
 }
 
 function renderTrendChart(trendData) {
   const ctx = document.getElementById('trendChart').getContext('2d');
 
-  if (trendChart) trendChart.destroy();
-
   if (!trendData.length) {
+    if (trendChart) { trendChart.destroy(); trendChart = null; }
     ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
     ctx.fillStyle = '#94a3b8';
     ctx.textAlign = 'center';
@@ -111,7 +122,6 @@ function renderTrendChart(trendData) {
     return;
   }
 
-  // Group by date and category
   const dates = [...new Set(trendData.map(d => d.date))].sort();
   const categoryNames = [...new Set(trendData.map(d => d.category_name))];
   const colorMap = {};
@@ -130,26 +140,30 @@ function renderTrendChart(trendData) {
     };
   });
 
-  trendChart = new Chart(ctx, {
-    type: 'bar',
-    data: {
-      labels: dates,
-      datasets,
-    },
-    options: {
-      responsive: true,
-      scales: {
-        x: { stacked: true },
-        y: {
-          stacked: true,
-          title: { display: true, text: '분 (minutes)' },
+  const data = { labels: dates, datasets };
+
+  if (trendChart) {
+    trendChart.data = data;
+    trendChart.update();
+  } else {
+    trendChart = new Chart(ctx, {
+      type: 'bar',
+      data,
+      options: {
+        responsive: true,
+        scales: {
+          x: { stacked: true },
+          y: {
+            stacked: true,
+            title: { display: true, text: '분 (minutes)' },
+          },
         },
-      },
-      plugins: {
-        legend: { position: 'top' },
+        plugins: {
+          legend: { position: 'top' },
+        }
       }
-    }
-  });
+    });
+  }
 }
 
 async function loadDashboard(range) {
