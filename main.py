@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from starlette.middleware.gzip import GZipMiddleware
 from db.database import engine, Base, async_session
 from db.seed import seed_categories
 from api.categories import router as categories_router
@@ -20,7 +21,28 @@ async def lifespan(app: FastAPI):
     yield
 
 
+class CacheControlMiddleware:
+    """Pure ASGI middleware that adds Cache-Control headers for static assets."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http" and scope["path"].startswith("/static/"):
+            async def send_with_cache(message):
+                if message["type"] == "http.response.start":
+                    headers = list(message.get("headers", []))
+                    headers.append((b"cache-control", b"public, max-age=86400"))
+                    message["headers"] = headers
+                await send(message)
+            await self.app(scope, receive, send_with_cache)
+        else:
+            await self.app(scope, receive, send)
+
+
 app = FastAPI(title="Daily Time Tracker", lifespan=lifespan)
+app.add_middleware(GZipMiddleware, minimum_size=500)
+app.add_middleware(CacheControlMiddleware)
 
 app.include_router(categories_router)
 app.include_router(daily_pages_router)

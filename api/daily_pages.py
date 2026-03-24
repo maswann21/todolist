@@ -3,7 +3,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select, extract
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import selectinload, attributes
 from db.database import get_db
 from db.models import DailyPage, Task, TimeBlock
 from pydantic import BaseModel, model_validator
@@ -85,9 +85,8 @@ async def get_or_create(date_str: str, db: AsyncSession = Depends(get_db)):
         page = DailyPage(date=d)
         db.add(page)
         await db.commit()
-        # Reload with relationships
-        result = await db.execute(stmt)
-        page = result.scalar_one_or_none()
+        await db.refresh(page)
+        attributes.set_committed_value(page, "tasks", [])
     return page
 
 
@@ -110,8 +109,7 @@ async def update_page(date_str: str, body: DailyPageUpdate, db: AsyncSession = D
     if body.d_day_label is not None:
         page.d_day_label = body.d_day_label
     await db.commit()
-    await db.refresh(page)
-    # Reload with relationships after refresh
+    # Reload with relationships (single query, no redundant refresh)
     result = await db.execute(stmt)
     page = result.scalar_one_or_none()
     return page

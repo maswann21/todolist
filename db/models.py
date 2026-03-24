@@ -32,8 +32,8 @@ class Task(Base):
     __tablename__ = "tasks"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    daily_page_id: Mapped[int] = mapped_column(ForeignKey("daily_pages.id"), nullable=False)
-    category_id: Mapped[int] = mapped_column(ForeignKey("categories.id"), nullable=False)
+    daily_page_id: Mapped[int] = mapped_column(ForeignKey("daily_pages.id"), nullable=False, index=True)
+    category_id: Mapped[int] = mapped_column(ForeignKey("categories.id"), nullable=False, index=True)
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     priority: Mapped[int] = mapped_column(Integer, default=0)
     status: Mapped[str | None] = mapped_column(String(10), nullable=True)
@@ -49,7 +49,7 @@ class TimeBlock(Base):
     __tablename__ = "time_blocks"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    task_id: Mapped[int] = mapped_column(ForeignKey("tasks.id"), nullable=False)
+    task_id: Mapped[int] = mapped_column(ForeignKey("tasks.id"), nullable=False, index=True)
     start_at: Mapped[time] = mapped_column(Time, nullable=False)
     end_at: Mapped[time] = mapped_column(Time, nullable=False)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())

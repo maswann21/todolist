@@ -2,7 +2,7 @@ from datetime import time
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator
-from sqlalchemy import select
+from sqlalchemy import select, exists
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from db.database import get_db
@@ -49,17 +49,18 @@ async def _check_overlap(
     exclude_id: Optional[int] = None,
 ) -> bool:
     """Return True if there is an overlapping time block for the given day."""
-    stmt = (
-        select(TimeBlock)
+    overlap_condition = (
+        select(TimeBlock.id)
         .join(Task)
         .where(Task.daily_page_id == daily_page_id)
         .where(TimeBlock.start_at < end)
         .where(TimeBlock.end_at > start)
     )
     if exclude_id is not None:
-        stmt = stmt.where(TimeBlock.id != exclude_id)
+        overlap_condition = overlap_condition.where(TimeBlock.id != exclude_id)
+    stmt = select(overlap_condition.exists())
     result = await db.execute(stmt)
-    return result.scalar_one_or_none() is not None
+    return result.scalar()
 
 
 @router.post("/api/tasks/{task_id}/time-blocks", response_model=TimeBlockOut)

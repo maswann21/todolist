@@ -11,7 +11,7 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
-engine = create_async_engine(settings.DATABASE_URL, echo=False)
+engine = create_async_engine(settings.DATABASE_URL, echo=False, pool_size=3, max_overflow=5)
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
